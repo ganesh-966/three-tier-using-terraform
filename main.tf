@@ -1,10 +1,10 @@
-# three-tier-using-terraform
-
-
-### The infrastructure includes a VPC, public and private subnets, EC2 instances, security groups, and networking components.
-
-#### . created a vpc
-
+terraform {
+  backend "s3" {
+    bucket = "new-bucket-for-threetier-1"
+    key = "singapore"
+    region = "ap-southeast-1"
+  }
+}
 
 provider "aws" {
   region = var.region
@@ -17,42 +17,69 @@ resource "aws_vpc" "my-vpc" {
   }
 }
 
-![](./images/Screenshot%202025-12-17%20091856.png)
+# create a public subnet
+
+resource "aws_subnet" "public-subnet" {
+  vpc_id = aws_vpc.my-vpc.id
+  cidr_block = var.public_cidr
+  availability_zone = var.az1
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "${var.project_name}public-subnet"
+  }
+}
 
 
-#### . created a public subnets
 
-![](./images/Screenshot%202025-12-17%20091914.png)
+# create a private subnet
 
-#### 🌐 Internet Gateway
+resource "aws_subnet" "private-subnet" {
+  vpc_id = aws_vpc.my-vpc.id
+  cidr_block = var.private_cidr
+  availability_zone = var.az2
+  tags = {
+    Name = "${var.project_name}-private-subnet"
+  }
+}
 
- Internet Gateway (IGW) is created and attached to the VPC to enable internet access for resources in public subnets.
+# create a private subnet for database
 
-![](./images/Screenshot%202025-12-17%20091941.png)
+resource "aws_subnet" "private-subnet-b" {
+  vpc_id = aws_vpc.my-vpc.id
+  cidr_block = var.private_cidr_b
+  availability_zone = var.az2
+  tags = {
+    Name = "${var.project_name}-private-subnet-b"
+  }
+}
 
-#### . created a deafualt route table & added a route in main route table
-
-![](./images/Screenshot%202025-12-17%20091927.png)
 
 
-#### 🔐 Security Group
+# creating a internet gateway
 
-A security group is created to control inbound and outbound traffic for the EC2 instances in the VPC.
-This security group allows SSH, HTTP, and MySQL traffic.
+resource "aws_internet_gateway" "my_igw" {
+  vpc_id = aws_vpc.my-vpc.id
+  tags = {
+    Name = "${var.project_name}-igw"
+  }
+}
 
-Description
+# creating deafault route table
 
-Associated with the custom VPC
+resource "aws_default_route_table" "main-RT" {
+  default_route_table_id = aws_vpc.my-vpc.default_route_table_id
+  tags = {
+    Name = "${var.project_name}-main-RT"
+  }
+}
+# add a route in main route table
+resource "aws_route" "aws-route" {
+  route_table_id = aws_default_route_table.main-RT.id
+  destination_cidr_block = var.igw_cidr
+  gateway_id = aws_internet_gateway.my_igw.id
+}
 
-Acts as a virtual firewall for EC2 instances
-
-Allows access for administration, web traffic, and database communication
-
-Inbound Rules
-Protocol	Port	Source	Purpose
-TCP	22	0.0.0.0/0	SSH access
-TCP	80	0.0.0.0/0	HTTP (Web traffic)
-TCP	3306	0.0.0.0/0	MySQL database access
+# create a security group
 
 resource "aws_security_group" "my_sg" {
   vpc_id = aws_vpc.my-vpc.id
@@ -88,8 +115,7 @@ resource "aws_security_group" "my_sg" {
     depends_on = [ aws_vpc.my-vpc ] # explicit dependency
 }
 
-
-#### . created a public web server and private app & db servers
+# create a public server
 
 resource "aws_instance" "public_server" {
   subnet_id = aws_subnet.public-subnet.id
@@ -128,5 +154,3 @@ resource "aws_instance" "db_server" {
   }
   depends_on = [ aws_security_group.my_sg ]
 }
-
-![](./images/Screenshot%202025-12-17%20092359.png)
